@@ -1,0 +1,20 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Playwright binaries
+.playwright/
+
+# Runtime data
+node_modules
+package-lock.json
+
+# Environment variables
+.env
+.env.example
+
+# Editor/OS directories
+.vscode/*
+.idea
+.DS_Store
