@@ -56,9 +56,23 @@ router.post('/register', async (req, res, next) => {
       token,
       user: {
         userId: newUser._id,
-        email: newUser.email
+        email: newUser.email,
+        name: newUser.name,
+        phone: newUser.phone,
+        emailNotifications: newUser.emailNotifications
       }
     });
+
+    // Send Welcome Email
+    try {
+      const notifier = require('../services/notifier');
+      notifier.sendWelcomeEmail(newUser.email).catch((emailErr) => {
+        console.error('Welcome email sending failed:', emailErr.message);
+      });
+    } catch (notifierErr) {
+      console.error('Welcome email trigger failed:', notifierErr.message);
+    }
+
   } catch (error) {
     next(error);
   }
@@ -99,7 +113,57 @@ router.post('/login', async (req, res, next) => {
       token,
       user: {
         userId: user._id,
-        email: user.email
+        email: user.email,
+        name: user.name,
+        phone: user.phone,
+        emailNotifications: user.emailNotifications
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /api/auth/profile
+const authMiddleware = require('../middleware/auth');
+router.put('/profile', authMiddleware, async (req, res, next) => {
+  try {
+    const { name, phone, emailNotifications, oldPassword, newPassword } = req.body;
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Update details
+    if (name !== undefined) user.name = name;
+    if (phone !== undefined) user.phone = phone;
+    if (emailNotifications !== undefined) user.emailNotifications = emailNotifications;
+
+    // Handle password update
+    if (oldPassword && newPassword) {
+      const isPasswordValid = await bcrypt.compare(oldPassword, user.passwordHash);
+      if (!isPasswordValid) {
+        return res.status(400).json({ error: 'Incorrect old password' });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: 'New password must be at least 6 characters long' });
+      }
+
+      user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    }
+
+    await user.save();
+
+    res.status(200).json({
+      message: 'Profile updated successfully',
+      user: {
+        userId: user._id,
+        email: user.email,
+        name: user.name,
+        phone: user.phone,
+        emailNotifications: user.emailNotifications
       }
     });
   } catch (error) {

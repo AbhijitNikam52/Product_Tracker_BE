@@ -85,8 +85,10 @@ const processPriceUpdate = async (item, scrapedData) => {
       // Find the tracking user
       const user = await User.findById(item.userId);
       if (user) {
-        // Send email notification
-        await notifier.sendEmail(user.email, item, price);
+        // Send email notification only if user preference is enabled
+        if (user.emailNotifications !== false) {
+          await notifier.sendEmail(user.email, item, price);
+        }
 
         // Delete any existing notifications for this item to keep only the latest one
         await Notification.deleteMany({ itemId: item._id });
