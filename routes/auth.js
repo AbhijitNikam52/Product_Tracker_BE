@@ -37,21 +37,26 @@ router.post('/register', async (req, res, next) => {
     // 3. Hash password
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    // 4. Save User
+    // 4. Determine role based on ADMIN_EMAILS env variable
+    const adminEmails = (process.env.ADMIN_EMAILS || '').toLowerCase().split(',').map(e => e.trim());
+    const role = adminEmails.includes(normalizedEmail) ? 'admin' : 'user';
+
+    // 5. Save User
     const newUser = new User({
       email: normalizedEmail,
-      passwordHash
+      passwordHash,
+      role
     });
     await newUser.save();
 
-    // 5. Generate JWT token
+    // 6. Generate JWT token
     const token = jwt.sign(
-      { userId: newUser._id, email: newUser.email },
+      { userId: newUser._id, email: newUser.email, role: newUser.role },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
     );
 
-    // 6. Return response
+    // 7. Return response
     res.status(201).json({
       token,
       user: {
@@ -59,7 +64,8 @@ router.post('/register', async (req, res, next) => {
         email: newUser.email,
         name: newUser.name,
         phone: newUser.phone,
-        emailNotifications: newUser.emailNotifications
+        emailNotifications: newUser.emailNotifications,
+        role: newUser.role
       }
     });
 
@@ -88,8 +94,45 @@ router.post('/login', async (req, res, next) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // 2. Find user
+    // 2. Find user & Sync admin configuration from .env dynamically
     const normalizedEmail = email.toLowerCase().trim();
+    const adminEmails = (process.env.ADMIN_EMAILS || '').toLowerCase().split(',').map(e => e.trim());
+    const adminPassword = process.env.ADMIN_PASSWORD || '';
+
+    // If logging-in user matches the admin configurations in env
+    if (adminEmails.includes(normalizedEmail) && password === adminPassword) {
+      let adminUser = await User.findOne({ email: normalizedEmail });
+      const passwordHash = await bcrypt.hash(adminPassword, SALT_ROUNDS);
+
+      if (!adminUser) {
+        adminUser = new User({
+          email: normalizedEmail,
+          passwordHash,
+          role: 'admin',
+          name: 'System Admin'
+        });
+        await adminUser.save();
+        console.log(`[Auth] Auto-created admin user from .env: ${normalizedEmail}`);
+      } else {
+        let modified = false;
+        if (adminUser.role !== 'admin') {
+          adminUser.role = 'admin';
+          modified = true;
+        }
+
+        const isPasswordValid = await bcrypt.compare(adminPassword, adminUser.passwordHash);
+        if (!isPasswordValid) {
+          adminUser.passwordHash = passwordHash;
+          modified = true;
+        }
+
+        if (modified) {
+          await adminUser.save();
+          console.log(`[Auth] Synchronized admin user details for: ${normalizedEmail}`);
+        }
+      }
+    }
+
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
@@ -103,7 +146,7 @@ router.post('/login', async (req, res, next) => {
 
     // 4. Generate JWT
     const token = jwt.sign(
-      { userId: user._id, email: user.email },
+      { userId: user._id, email: user.email, role: user.role },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
     );
@@ -116,7 +159,8 @@ router.post('/login', async (req, res, next) => {
         email: user.email,
         name: user.name,
         phone: user.phone,
-        emailNotifications: user.emailNotifications
+        emailNotifications: user.emailNotifications,
+        role: user.role
       }
     });
   } catch (error) {
@@ -163,7 +207,8 @@ router.put('/profile', authMiddleware, async (req, res, next) => {
         email: user.email,
         name: user.name,
         phone: user.phone,
-        emailNotifications: user.emailNotifications
+        emailNotifications: user.emailNotifications,
+        role: user.role
       }
     });
   } catch (error) {

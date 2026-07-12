@@ -15,7 +15,8 @@ const authMiddleware = (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret_key');
     req.user = {
       id: decoded.userId,
-      email: decoded.email
+      email: decoded.email,
+      role: decoded.role || 'user'
     };
     next();
   } catch (error) {

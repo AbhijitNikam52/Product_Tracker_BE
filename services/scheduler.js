@@ -23,6 +23,11 @@ const performCheck = async (itemId) => {
 
     const scrapedData = await scraper.scrape(item.url);
     await priceEngine.process(item, scrapedData);
+
+    // Increment check hit count
+    item.checkCount = (item.checkCount || 0) + 1;
+    await item.save();
+
     console.log(`[Scheduler] Check successful for item: ${itemId} (${item.productName})`);
   } catch (error) {
     console.error(`[Scheduler] Check failed for item: ${itemId}. Error:`, error.message);
@@ -30,6 +35,7 @@ const performCheck = async (itemId) => {
       try {
         item.isAvailable = false;
         item.lastCheckedAt = new Date();
+        item.checkCount = (item.checkCount || 0) + 1;
         await item.save();
       } catch (saveErr) {
         console.error(`[Scheduler] Failed to update availability status for item: ${itemId}`, saveErr.message);
