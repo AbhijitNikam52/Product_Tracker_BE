@@ -45,7 +45,7 @@ app.use('/api/search', searchRoutes);
 
 // Base route for health check
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK', message: 'Antigravity backend is running' });
+  res.status(200).json({ status: 'OK', message: 'PriceDekho backend is running' });
 });
 
 // Global Error Handler (Must be registered last)
