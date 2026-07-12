@@ -12,6 +12,7 @@ const trackedItemSchema = new mongoose.Schema({
   isAvailable:    { type: Boolean, default: true },
   alertSent:      { type: Boolean, default: false },
   lastCheckedAt:  { type: Date, default: null },
+  checkCount:     { type: Number, default: 0 },
 }, { timestamps: true });
 
 module.exports = mongoose.model('TrackedItem', trackedItemSchema);

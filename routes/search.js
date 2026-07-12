@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth');
 const searchService = require('../services/productSearchService');
+const SearchLog = require('../models/SearchLog');
 
 // Apply auth middleware to protect search route
 router.use(authMiddleware);
@@ -16,6 +17,17 @@ router.get('/', async (req, res, next) => {
     }
 
     console.log(`[GET /api/search] Received search request for: "${query}" from user: ${req.user.id}`);
+
+    // Log the search query in database
+    try {
+      const log = new SearchLog({
+        query: query.trim(),
+        userId: req.user.id
+      });
+      await log.save();
+    } catch (logErr) {
+      console.error(`[GET /api/search] Search query logging failed:`, logErr.message);
+    }
     
     const results = await searchService.searchAll(query);
     res.status(200).json(results);
