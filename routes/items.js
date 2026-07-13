@@ -6,6 +6,7 @@ const PriceHistory = require('../models/PriceHistory');
 const Notification = require('../models/Notification');
 const scraper = require('../services/scraper');
 const scheduler = require('../services/scheduler');
+const couponService = require('../services/couponService');
 
 // Apply auth middleware to all item routes
 router.use(authMiddleware);
@@ -27,10 +28,18 @@ router.get('/', async (req, res, next) => {
       const firstHistory = await PriceHistory.findOne({ itemId: item._id }).sort({ recordedAt: 1 });
       const initialPrice = firstHistory ? firstHistory.price : item.currentPrice;
 
+      // Retrieve coupons for this product URL/store/ID
+      const coupons = await couponService.getCouponsForProduct({
+        productUrl: item.url,
+        store: item.site,
+        productId: item._id
+      });
+
       return {
         ...item.toObject(),
         unreadNotificationCount: unreadCount,
-        initialPrice: initialPrice || item.currentPrice
+        initialPrice: initialPrice || item.currentPrice,
+        coupons
       };
     }));
 
@@ -87,6 +96,11 @@ router.post('/', async (req, res, next) => {
       }
       
       await existingItem.save();
+
+      // Update scraped coupons for this item
+      if (scraped.coupons) {
+        await couponService.updateScrapedCoupons(url, existingItem._id, scraped.site, scraped.coupons);
+      }
 
       // Keep exactly 2 records in PriceHistory (previous price & latest price) only when price changes
       if (scraped.price !== null) {
@@ -157,6 +171,11 @@ router.post('/', async (req, res, next) => {
     });
 
     await newItem.save();
+
+    // Update scraped coupons for this item
+    if (scraped.coupons) {
+      await couponService.updateScrapedCoupons(url, newItem._id, scraped.site, scraped.coupons);
+    }
 
     // Create initial entry in PriceHistory (only if price is not null)
     if (scraped.price !== null) {

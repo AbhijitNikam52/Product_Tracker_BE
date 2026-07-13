@@ -14,10 +14,12 @@ const PriceHistory = require('../models/PriceHistory');
 const Notification = require('../models/Notification');
 const SearchLog = require('../models/SearchLog');
 const ComparisonProduct = require('../models/ComparisonProduct');
+const Coupon = require('../models/Coupon');
 
 // Services
 const scheduler = require('../services/scheduler');
 const scraper = require('../services/scraper');
+const couponService = require('../services/couponService');
 
 // Protect all admin routes
 router.use(authMiddleware);
@@ -403,6 +405,139 @@ router.post('/scheduler/trigger', async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: `Manual checks initiated in background for all ${items.length} products.`
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/admin/coupons
+// Retrieve all coupons in the system
+router.get('/coupons', async (req, res, next) => {
+  try {
+    const coupons = await Coupon.find({}).sort({ createdAt: -1 });
+    res.status(200).json(coupons);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/admin/coupons
+// Create a new coupon (store, category, brand, product, or bank_offer)
+router.post('/coupons', async (req, res, next) => {
+  try {
+    const {
+      code,
+      description,
+      discountType,
+      discountValue,
+      couponType,
+      store,
+      category,
+      brand,
+      productUrl,
+      isVerified,
+      expiryDate,
+      isActive
+    } = req.body;
+
+    if (!description || !couponType || !store) {
+      return res.status(400).json({ error: 'Please provide description, couponType, and store' });
+    }
+
+    const newCoupon = new Coupon({
+      code: code || '',
+      description,
+      discountType: discountType || 'other',
+      discountValue: discountValue || null,
+      couponType,
+      store,
+      category: category || '',
+      brand: brand || '',
+      productUrl: productUrl || '',
+      isVerified: isVerified !== false,
+      expiryDate: expiryDate || null,
+      isActive: isActive !== false,
+      source: 'admin',
+      addedBy: req.user.id
+    });
+
+    await newCoupon.save();
+    res.status(201).json(newCoupon);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /api/admin/coupons/:id
+// Update a coupon
+router.put('/coupons/:id', async (req, res, next) => {
+  try {
+    const {
+      code,
+      description,
+      discountType,
+      discountValue,
+      couponType,
+      store,
+      category,
+      brand,
+      productUrl,
+      isVerified,
+      expiryDate,
+      isActive
+    } = req.body;
+
+    const coupon = await Coupon.findById(req.params.id);
+    if (!coupon) {
+      return res.status(404).json({ error: 'Coupon not found' });
+    }
+
+    if (code !== undefined) coupon.code = code;
+    if (description !== undefined) coupon.description = description;
+    if (discountType !== undefined) coupon.discountType = discountType;
+    if (discountValue !== undefined) coupon.discountValue = discountValue;
+    if (couponType !== undefined) coupon.couponType = couponType;
+    if (store !== undefined) coupon.store = store;
+    if (category !== undefined) coupon.category = category;
+    if (brand !== undefined) coupon.brand = brand;
+    if (productUrl !== undefined) coupon.productUrl = productUrl;
+    if (isVerified !== undefined) coupon.isVerified = isVerified;
+    if (expiryDate !== undefined) coupon.expiryDate = expiryDate;
+    if (isActive !== undefined) coupon.isActive = isActive;
+
+    await coupon.save();
+    res.status(200).json(coupon);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// DELETE /api/admin/coupons/:id
+// Delete a coupon
+router.delete('/coupons/:id', async (req, res, next) => {
+  try {
+    const coupon = await Coupon.findById(req.params.id);
+    if (!coupon) {
+      return res.status(404).json({ error: 'Coupon not found' });
+    }
+
+    await Coupon.deleteOne({ _id: req.params.id });
+    res.status(200).json({ success: true, message: 'Coupon deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/admin/coupons/sync-affiliate
+// Trigger sync from mock affiliate feed
+router.post('/coupons/sync-affiliate', async (req, res, next) => {
+  try {
+    const result = await couponService.syncAffiliateCoupons();
+    res.status(200).json({
+      success: true,
+      message: `${result.count} affiliate coupons synced successfully.`,
+      result
     });
   } catch (error) {
     next(error);

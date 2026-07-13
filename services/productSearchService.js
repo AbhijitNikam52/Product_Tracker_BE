@@ -1,5 +1,6 @@
 const { chromium } = require('playwright');
 const url = require('url');
+const scraper = require('./scraper');
 
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36',
@@ -110,7 +111,7 @@ const checkRelevance = (query, title) => {
 /**
  * Scrapes detailed information from a product page
  */
-const scrapeProductPage = async (page, platform, productUrl) => {
+const scrapeProductPage = async (page, platform, productUrl, platformKey) => {
   try {
     console.log(`[Scraper] Navigating to product page: ${productUrl}`);
     // Wait for DOM content to load with a 30 second timeout
@@ -219,11 +220,30 @@ const scrapeProductPage = async (page, platform, productUrl) => {
       }
     }
 
+    // Scrape coupons & bank offers
+    let coupons = [];
+    try {
+      if (platformKey === 'amazon') {
+        coupons = await scraper.scrapeAmazonCoupons(page);
+      } else if (platformKey === 'flipkart') {
+        coupons = await scraper.scrapeFlipkartCoupons(page);
+      } else if (platformKey === 'myntra') {
+        coupons = await scraper.scrapeMyntraCoupons(page);
+      } else if (platformKey === 'ajio') {
+        coupons = await scraper.scrapeAjioCoupons(page);
+      } else {
+        coupons = await scraper.scrapeGenericCoupons(page);
+      }
+    } catch (couponErr) {
+      console.error('[Search Scraper] Error scraping coupons:', couponErr.message);
+    }
+
     return {
       title: title || 'Product details found',
       price,
       imageUrl: imageUrl || '',
-      rating: rating || ''
+      rating: rating || '',
+      coupons
     };
   } catch (err) {
     console.error(`[Scraper] Failed to scrape product page: ${productUrl}`, err.message);
@@ -349,7 +369,7 @@ const searchAndScrape = async (browser, platformKey, query) => {
     } catch (e) {}
 
     // Navigating & scraping product page details
-    const details = await scrapeProductPage(page, platform, productUrl);
+    const details = await scrapeProductPage(page, platform, productUrl, platformKey);
     
     // Validate relevance of scraped product to filter out unrelated ads/recommendations
     if (!checkRelevance(query, details.title)) {

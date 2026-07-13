@@ -2,6 +2,7 @@ const User = require('../models/User');
 const PriceHistory = require('../models/PriceHistory');
 const Notification = require('../models/Notification');
 const notifier = require('./notifier');
+const couponService = require('./couponService');
 
 /**
  * Processes a newly scraped price for a tracked item, managing database updates, 
@@ -27,6 +28,11 @@ const processPriceUpdate = async (item, scrapedData) => {
 
   // 2. Save the updated tracked item
   await item.save();
+
+  // Save/update scraped coupons
+  if (scrapedData.coupons) {
+    await couponService.updateScrapedCoupons(item.url, item._id, item.site, scrapedData.coupons);
+  }
 
   // 3. Keep exactly 2 records in PriceHistory (previous price & latest price) only when price changes
   if (price !== null) {
