@@ -32,10 +32,194 @@ const cleanUrl = (productUrl) => {
   }
 };
 
+const scrapeAmazonCoupons = async (page) => {
+  const coupons = [];
+  try {
+    const badgeEl = page.locator('#couponBadgeInsideCard, #couponBadge, .promoPriceBlockMessage, #applicable_coupons_base');
+    const count = await badgeEl.count();
+    for (let i = 0; i < count; i++) {
+      const txt = await badgeEl.nth(i).innerText();
+      if (txt && txt.trim()) {
+        const cleanTxt = txt.replace(/\s+/g, ' ').trim();
+        coupons.push({
+          code: '',
+          description: cleanTxt,
+          couponType: 'product',
+          discountType: cleanTxt.includes('%') ? 'percentage' : 'fixed',
+          isVerified: true,
+          source: 'scraped'
+        });
+      }
+    }
+  } catch (e) {
+    console.error('Error scraping Amazon coupons:', e.message);
+  }
+
+  try {
+    const bankOfferEl = page.locator('#bankOffers_feature_div .sw-offers-text, #bankOffers_feature_div .a-carousel-card, #sopp-cardOffers .a-carousel-card');
+    const count = await bankOfferEl.count();
+    for (let i = 0; i < count; i++) {
+      const txt = await bankOfferEl.nth(i).innerText();
+      if (txt && txt.trim()) {
+        const cleanTxt = txt.replace(/\s+/g, ' ').trim();
+        if (cleanTxt && !coupons.some(c => c.description === cleanTxt)) {
+          coupons.push({
+            code: '',
+            description: cleanTxt,
+            couponType: 'bank_offer',
+            isVerified: true,
+            source: 'scraped'
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error scraping Amazon bank offers:', e.message);
+  }
+  return coupons;
+};
+
+const scrapeFlipkartCoupons = async (page) => {
+  const coupons = [];
+  try {
+    const offerLocator = page.locator('li.YtuZUB, li.y3Z8r3, li._1ma8ca, div.x3Z8r3');
+    const count = await offerLocator.count();
+    for (let i = 0; i < count; i++) {
+      const txt = await offerLocator.nth(i).innerText();
+      if (txt && txt.trim()) {
+        const cleanTxt = txt.replace(/\s+/g, ' ').trim();
+        let couponType = 'bank_offer';
+        if (cleanTxt.toLowerCase().includes('coupon')) {
+          couponType = 'product';
+        }
+        
+        let code = '';
+        const codeMatch = cleanTxt.match(/use\s+code\s+([A-Z0-9]+)/i) || cleanTxt.match(/code:\s*([A-Z0-9]+)/i);
+        if (codeMatch) {
+          code = codeMatch[1];
+        }
+
+        if (!coupons.some(c => c.description === cleanTxt)) {
+          coupons.push({
+            code,
+            description: cleanTxt,
+            couponType,
+            isVerified: true,
+            source: 'scraped'
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error scraping Flipkart coupons:', e.message);
+  }
+  return coupons;
+};
+
+const scrapeMyntraCoupons = async (page) => {
+  const coupons = [];
+  try {
+    const couponLocator = page.locator('.best-offers-offer, .pdp-offers-container, .myntra-coupons-list-item');
+    const count = await couponLocator.count();
+    for (let i = 0; i < count; i++) {
+      const txt = await couponLocator.nth(i).innerText();
+      if (txt && txt.trim()) {
+        const cleanTxt = txt.replace(/\s+/g, ' ').trim();
+        let code = '';
+        const codeMatch = cleanTxt.match(/use\s+code\s+([A-Z0-9]+)/i) || cleanTxt.match(/code:\s*([A-Z0-9]+)/i);
+        if (codeMatch) {
+          code = codeMatch[1];
+        }
+
+        if (!coupons.some(c => c.description === cleanTxt)) {
+          coupons.push({
+            code,
+            description: cleanTxt,
+            couponType: 'product',
+            isVerified: true,
+            source: 'scraped'
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error scraping Myntra coupons:', e.message);
+  }
+  return coupons;
+};
+
+const scrapeAjioCoupons = async (page) => {
+  const coupons = [];
+  try {
+    const couponLocator = page.locator('.promo-desc, .promo-title, .offer-item, .pdp-coupon-container');
+    const count = await couponLocator.count();
+    for (let i = 0; i < count; i++) {
+      const txt = await couponLocator.nth(i).innerText();
+      if (txt && txt.trim()) {
+        const cleanTxt = txt.replace(/\s+/g, ' ').trim();
+        let code = '';
+        const codeMatch = cleanTxt.match(/use\s+code\s+([A-Z0-9]+)/i) || cleanTxt.match(/code:\s*([A-Z0-9]+)/i);
+        if (codeMatch) {
+          code = codeMatch[1];
+        }
+
+        if (!coupons.some(c => c.description === cleanTxt)) {
+          coupons.push({
+            code,
+            description: cleanTxt,
+            couponType: 'product',
+            isVerified: true,
+            source: 'scraped'
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error scraping Ajio coupons:', e.message);
+  }
+  return coupons;
+};
+
+const scrapeGenericCoupons = async (page) => {
+  const coupons = [];
+  try {
+    const elementLocator = page.locator('[class*="coupon" i], [class*="offer" i], [class*="promo" i]');
+    const count = await elementLocator.count();
+    const limit = Math.min(count, 10);
+    for (let i = 0; i < limit; i++) {
+      const txt = await elementLocator.nth(i).innerText();
+      if (txt && txt.trim() && txt.length < 200) {
+        const cleanTxt = txt.replace(/\s+/g, ' ').trim();
+        const lower = cleanTxt.toLowerCase();
+        if (lower.includes('off') || lower.includes('discount') || lower.includes('cashback') || lower.includes('code') || lower.includes('save')) {
+          let code = '';
+          const codeMatch = cleanTxt.match(/use\s+code\s+([A-Z0-9]+)/i) || cleanTxt.match(/code:\s*([A-Z0-9]+)/i);
+          if (codeMatch) {
+            code = codeMatch[1];
+          }
+
+          if (!coupons.some(c => c.description === cleanTxt)) {
+            coupons.push({
+              code,
+              description: cleanTxt,
+              couponType: lower.includes('bank') ? 'bank_offer' : 'product',
+              isVerified: true,
+              source: 'scraped'
+            });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error scraping generic coupons:', e.message);
+  }
+  return coupons;
+};
+
 /**
- * Scrapes a product URL for price, title, image, site and currency
+ * Scrapes a product URL for price, title, image, site, currency and coupons
  * @param {string} productUrl 
- * @returns {Promise<{price: number, productName: string, imageUrl: string, site: string, currency: string}>}
+ * @returns {Promise<{price: number, productName: string, imageUrl: string, site: string, currency: string, coupons: Array}>}
  */
 const scrape = async (productUrl) => {
   let browser;
@@ -271,6 +455,24 @@ const scrape = async (productUrl) => {
       parsedPrice = null;
     }
 
+    // Scrape coupons & bank offers
+    let coupons = [];
+    try {
+      if (site === 'amazon') {
+        coupons = await scrapeAmazonCoupons(page);
+      } else if (site === 'flipkart') {
+        coupons = await scrapeFlipkartCoupons(page);
+      } else if (site === 'myntra') {
+        coupons = await scrapeMyntraCoupons(page);
+      } else if (site === 'ajio') {
+        coupons = await scrapeAjioCoupons(page);
+      } else {
+        coupons = await scrapeGenericCoupons(page);
+      }
+    } catch (couponErr) {
+      console.error('Error scraping coupons/offers:', couponErr.message);
+    }
+
     // Close browser cleanly
     await context.close();
     await browser.close();
@@ -281,7 +483,8 @@ const scrape = async (productUrl) => {
       productName: productName.substring(0, 150), // prevent too long title
       imageUrl: imageUrl || '',
       site,
-      currency
+      currency,
+      coupons
     };
   } catch (error) {
     if (browser) {
@@ -293,5 +496,10 @@ const scrape = async (productUrl) => {
 };
 
 module.exports = {
-  scrape
+  scrape,
+  scrapeAmazonCoupons,
+  scrapeFlipkartCoupons,
+  scrapeMyntraCoupons,
+  scrapeAjioCoupons,
+  scrapeGenericCoupons
 };
