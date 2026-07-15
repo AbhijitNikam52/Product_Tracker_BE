@@ -4,6 +4,8 @@ const authMiddleware = require('../middleware/auth');
 const TrackedItem = require('../models/TrackedItem');
 const PriceHistory = require('../models/PriceHistory');
 
+const predictionService = require('../services/predictionService');
+
 // GET /api/prices/:itemId/history
 router.get('/:itemId/history', authMiddleware, async (req, res, next) => {
   try {
@@ -25,7 +27,10 @@ router.get('/:itemId/history', authMiddleware, async (req, res, next) => {
       recordedAt: { $gte: ninetyDaysAgo }
     }).sort({ recordedAt: 1 });
 
-    res.status(200).json(history);
+    // Generate prediction and recommendation analysis
+    const result = predictionService.getPredictions(item, history);
+
+    res.status(200).json(result);
   } catch (error) {
     next(error);
   }

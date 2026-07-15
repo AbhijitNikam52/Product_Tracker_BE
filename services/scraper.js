@@ -327,6 +327,65 @@ const scrape = async (productUrl) => {
       imageUrl = await page.locator('meta[property="og:image"]').getAttribute('content');
     } catch (e) {}
 
+    // Fallbacks for specific sites if og:image is missing
+    if (!imageUrl) {
+      try {
+        if (site === 'amazon') {
+          const imgSelectors = ['#landingImage', '#imgBlkFront', '#main-image', '.imgTagWrapper img'];
+          for (const selector of imgSelectors) {
+            const el = page.locator(selector).first();
+            if (await el.isVisible()) {
+              const src = await el.getAttribute('src');
+              if (src) {
+                imageUrl = src;
+                break;
+              }
+            }
+          }
+        } else if (site === 'flipkart') {
+          const imgSelectors = ['img._396cs4', 'img._2r3Ww_', 'div._3kidCm img', 'img[src*="flipkart.com/image/"]', 'img._1BDryT'];
+          for (const selector of imgSelectors) {
+            const el = page.locator(selector).first();
+            if (await el.isVisible()) {
+              const src = await el.getAttribute('src');
+              if (src) {
+                imageUrl = src;
+                break;
+              }
+            }
+          }
+        }
+      } catch (imgErr) {
+        console.error('Fallback image extraction error:', imgErr.message);
+      }
+    }
+
+    // Generic fallback for any site if still empty
+    if (!imageUrl) {
+      try {
+        const selectors = [
+          'main img',
+          'article img',
+          '#product-image img',
+          '.product-image img',
+          '.gallery img',
+          'div[class*="image"] img',
+          'div[class*="gallery"] img',
+          'img'
+        ];
+        for (const selector of selectors) {
+          const el = page.locator(selector).first();
+          if (await el.isVisible()) {
+            const src = await el.getAttribute('src');
+            if (src && src.startsWith('http')) {
+              imageUrl = src;
+              break;
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
     // Extract price based on selectors
     let priceText = '';
 
