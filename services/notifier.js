@@ -151,7 +151,7 @@ const sendEmail = async (toEmail, item, currentPrice) => {
  */
 const sendWelcomeEmail = async (toEmail) => {
   const subject = `👋 Welcome to PriceDekho - Start Tracking and Saving!`;
-  const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+  const clientUrl = process.env.VITE_FRONTEND_API_URL;
 
   const htmlBody = `
     <!DOCTYPE html>
