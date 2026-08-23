@@ -110,5 +110,6 @@ const processPriceUpdate = async (item, scrapedData) => {
 };
 
 module.exports = {
-  process: processPriceUpdate
+  process: processPriceUpdate,
+  processPriceUpdate
 };
