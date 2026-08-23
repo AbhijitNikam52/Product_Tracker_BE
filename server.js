@@ -12,6 +12,9 @@ const pricesRoutes = require('./routes/prices');
 const notificationsRoutes = require('./routes/notifications');
 const comparisonRoutes = require('./routes/comparison');
 const searchRoutes = require('./routes/search');
+const adminRoutes = require('./routes/admin');
+const savedProductsRoutes = require('./routes/savedProducts');
+const couponsRoutes = require('./routes/coupons');
 
 // Scheduler Import
 const scheduler = require('./services/scheduler');
@@ -42,10 +45,13 @@ app.use('/api/prices', pricesRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/comparison', comparisonRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/saved-products', savedProductsRoutes);
+app.use('/api/coupons', couponsRoutes);
 
 // Base route for health check
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK', message: 'Antigravity backend is running' });
+  res.status(200).json({ status: 'OK', message: 'PriceDekho backend is running' });
 });
 
 // Global Error Handler (Must be registered last)

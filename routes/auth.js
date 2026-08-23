@@ -37,28 +37,48 @@ router.post('/register', async (req, res, next) => {
     // 3. Hash password
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    // 4. Save User
+    // 4. Determine role based on ADMIN_EMAILS env variable
+    const adminEmails = (process.env.ADMIN_EMAILS || '').toLowerCase().split(',').map(e => e.trim());
+    const role = adminEmails.includes(normalizedEmail) ? 'admin' : 'user';
+
+    // 5. Save User
     const newUser = new User({
       email: normalizedEmail,
-      passwordHash
+      passwordHash,
+      role
     });
     await newUser.save();
 
-    // 5. Generate JWT token
+    // 6. Generate JWT token
     const token = jwt.sign(
-      { userId: newUser._id, email: newUser.email },
+      { userId: newUser._id, email: newUser.email, role: newUser.role },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
     );
 
-    // 6. Return response
+    // 7. Return response
     res.status(201).json({
       token,
       user: {
         userId: newUser._id,
-        email: newUser.email
+        email: newUser.email,
+        name: newUser.name,
+        phone: newUser.phone,
+        emailNotifications: newUser.emailNotifications,
+        role: newUser.role
       }
     });
+
+    // Send Welcome Email
+    try {
+      const notifier = require('../services/notifier');
+      notifier.sendWelcomeEmail(newUser.email).catch((emailErr) => {
+        console.error('Welcome email sending failed:', emailErr.message);
+      });
+    } catch (notifierErr) {
+      console.error('Welcome email trigger failed:', notifierErr.message);
+    }
+
   } catch (error) {
     next(error);
   }
@@ -74,8 +94,45 @@ router.post('/login', async (req, res, next) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // 2. Find user
+    // 2. Find user & Sync admin configuration from .env dynamically
     const normalizedEmail = email.toLowerCase().trim();
+    const adminEmails = (process.env.ADMIN_EMAILS || '').toLowerCase().split(',').map(e => e.trim());
+    const adminPassword = process.env.ADMIN_PASSWORD || '';
+
+    // If logging-in user matches the admin configurations in env
+    if (adminEmails.includes(normalizedEmail) && password === adminPassword) {
+      let adminUser = await User.findOne({ email: normalizedEmail });
+      const passwordHash = await bcrypt.hash(adminPassword, SALT_ROUNDS);
+
+      if (!adminUser) {
+        adminUser = new User({
+          email: normalizedEmail,
+          passwordHash,
+          role: 'admin',
+          name: 'System Admin'
+        });
+        await adminUser.save();
+        console.log(`[Auth] Auto-created admin user from .env: ${normalizedEmail}`);
+      } else {
+        let modified = false;
+        if (adminUser.role !== 'admin') {
+          adminUser.role = 'admin';
+          modified = true;
+        }
+
+        const isPasswordValid = await bcrypt.compare(adminPassword, adminUser.passwordHash);
+        if (!isPasswordValid) {
+          adminUser.passwordHash = passwordHash;
+          modified = true;
+        }
+
+        if (modified) {
+          await adminUser.save();
+          console.log(`[Auth] Synchronized admin user details for: ${normalizedEmail}`);
+        }
+      }
+    }
+
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
@@ -89,7 +146,7 @@ router.post('/login', async (req, res, next) => {
 
     // 4. Generate JWT
     const token = jwt.sign(
-      { userId: user._id, email: user.email },
+      { userId: user._id, email: user.email, role: user.role },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
     );
@@ -99,7 +156,59 @@ router.post('/login', async (req, res, next) => {
       token,
       user: {
         userId: user._id,
-        email: user.email
+        email: user.email,
+        name: user.name,
+        phone: user.phone,
+        emailNotifications: user.emailNotifications,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /api/auth/profile
+const authMiddleware = require('../middleware/auth');
+router.put('/profile', authMiddleware, async (req, res, next) => {
+  try {
+    const { name, phone, emailNotifications, oldPassword, newPassword } = req.body;
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Update details
+    if (name !== undefined) user.name = name;
+    if (phone !== undefined) user.phone = phone;
+    if (emailNotifications !== undefined) user.emailNotifications = emailNotifications;
+
+    // Handle password update
+    if (oldPassword && newPassword) {
+      const isPasswordValid = await bcrypt.compare(oldPassword, user.passwordHash);
+      if (!isPasswordValid) {
+        return res.status(400).json({ error: 'Incorrect old password' });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: 'New password must be at least 6 characters long' });
+      }
+
+      user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    }
+
+    await user.save();
+
+    res.status(200).json({
+      message: 'Profile updated successfully',
+      user: {
+        userId: user._id,
+        email: user.email,
+        name: user.name,
+        phone: user.phone,
+        emailNotifications: user.emailNotifications,
+        role: user.role
       }
     });
   } catch (error) {

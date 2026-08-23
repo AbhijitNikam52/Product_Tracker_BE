@@ -6,6 +6,7 @@ const PriceHistory = require('../models/PriceHistory');
 const Notification = require('../models/Notification');
 const scraper = require('../services/scraper');
 const scheduler = require('../services/scheduler');
+const couponService = require('../services/couponService');
 
 // Apply auth middleware to all item routes
 router.use(authMiddleware);
@@ -27,10 +28,18 @@ router.get('/', async (req, res, next) => {
       const firstHistory = await PriceHistory.findOne({ itemId: item._id }).sort({ recordedAt: 1 });
       const initialPrice = firstHistory ? firstHistory.price : item.currentPrice;
 
+      // Retrieve coupons for this product URL/store/ID
+      const coupons = await couponService.getCouponsForProduct({
+        productUrl: item.url,
+        store: item.site,
+        productId: item._id
+      });
+
       return {
         ...item.toObject(),
         unreadNotificationCount: unreadCount,
-        initialPrice: initialPrice || item.currentPrice
+        initialPrice: initialPrice || item.currentPrice,
+        coupons
       };
     }));
 
@@ -44,21 +53,33 @@ router.get('/', async (req, res, next) => {
 // Handles both scraping preview (when targetPrice === 0) and creating/tracking new products
 router.post('/', async (req, res, next) => {
   try {
-    const { url, targetPrice } = req.body;
+    const { url, targetPrice, productName, imageUrl, currentPrice, site, currency, coupons } = req.body;
 
     if (!url || !url.startsWith('http')) {
       return res.status(400).json({ error: 'Please provide a valid product URL starting with http/https' });
     }
 
-    console.log(`[POST /api/items] Scraping request for url: ${url}, targetPrice: ${targetPrice}`);
+    console.log(`[POST /api/items] Request for url: ${url}, targetPrice: ${targetPrice}`);
 
-    // Call scraper immediately
+    // Use client-provided pre-scraped details if present, otherwise fall back to scraper
     let scraped;
-    try {
-      scraped = await scraper.scrape(url);
-    } catch (scrapeErr) {
-      console.error('[POST /api/items] Scrape error:', scrapeErr.message);
-      return res.status(422).json({ error: 'Could not fetch price. Try a different link or verify the website is accessible.' });
+    if (productName && currentPrice !== undefined) {
+      console.log(`[POST /api/items] Using client-provided metadata for: "${productName}"`);
+      scraped = {
+        productName,
+        imageUrl: imageUrl || '',
+        price: currentPrice,
+        site: site || 'generic',
+        currency: currency || 'INR',
+        coupons: coupons || []
+      };
+    } else {
+      try {
+        scraped = await scraper.scrape(url);
+      } catch (scrapeErr) {
+        console.error('[POST /api/items] Scrape error:', scrapeErr.message);
+        return res.status(422).json({ error: 'Could not fetch price. Try a different link or verify the website is accessible.' });
+      }
     }
 
     // 1. Preview Mode: if targetPrice is 0 (or not specified), just return scraped data
@@ -87,6 +108,11 @@ router.post('/', async (req, res, next) => {
       }
       
       await existingItem.save();
+
+      // Update scraped coupons for this item
+      if (scraped.coupons) {
+        await couponService.updateScrapedCoupons(url, existingItem._id, scraped.site, scraped.coupons);
+      }
 
       // Keep exactly 2 records in PriceHistory (previous price & latest price) only when price changes
       if (scraped.price !== null) {
@@ -157,6 +183,11 @@ router.post('/', async (req, res, next) => {
     });
 
     await newItem.save();
+
+    // Update scraped coupons for this item
+    if (scraped.coupons) {
+      await couponService.updateScrapedCoupons(url, newItem._id, scraped.site, scraped.coupons);
+    }
 
     // Create initial entry in PriceHistory (only if price is not null)
     if (scraped.price !== null) {
