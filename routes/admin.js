@@ -15,10 +15,12 @@ const Notification = require('../models/Notification');
 const SearchLog = require('../models/SearchLog');
 const ComparisonProduct = require('../models/ComparisonProduct');
 const SavedProduct = require('../models/SavedProduct');
+const SyncReport = require('../models/SyncReport');
 
 // Services
 const scheduler = require('../services/scheduler');
 const scraper = require('../services/scraper');
+const priceEngine = require('../services/priceEngine');
 
 // Protect all admin routes
 router.use(authMiddleware);
@@ -411,4 +413,174 @@ router.post('/scheduler/trigger', async (req, res, next) => {
     next(error);
   }
 });
+// POST /api/admin/sync-all
+// Runs live web scraping across all tracked products in the database, updates changed prices, and generates an audit report
+router.post('/sync-all', async (req, res, next) => {
+  const startTime = Date.now();
+  const startedAt = new Date();
+
+  try {
+    const items = await TrackedItem.find({});
+    const triggeredBy = req.user?.email ? `Admin (${req.user.email})` : 'Admin';
+
+    const logs = [];
+    let updatedCount = 0;
+    let unchangedCount = 0;
+    let unavailableCount = 0;
+    let failedCount = 0;
+
+    console.log(`[Sync Engine] Admin initiated live bulk sync for ${items.length} products.`);
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const oldPrice = item.currentPrice;
+      const oldAvailable = item.isAvailable;
+      const symbol = item.currency === 'USD' ? '$' : '₹';
+
+      try {
+        const scrapedData = await scraper.scrape(item.url);
+        const newPrice = scrapedData.price;
+        const isNowAvailable = newPrice !== null;
+
+        let status = 'unchanged';
+        let logType = 'UNCHANGED';
+        let changeDetails = '';
+
+        if (newPrice === null) {
+          status = 'unavailable';
+          logType = 'UNAVAILABLE';
+          changeDetails = `OUT OF STOCK: Product page returned null price or is currently unavailable.`;
+          unavailableCount++;
+        } else if (oldPrice === null && newPrice !== null) {
+          status = 'updated';
+          logType = 'PRICE_DROP';
+          changeDetails = `BACK IN STOCK: Now available at ${symbol}${newPrice.toLocaleString('en-IN')}.`;
+          updatedCount++;
+        } else if (oldPrice !== null && newPrice !== oldPrice) {
+          status = 'updated';
+          if (newPrice < oldPrice) {
+            logType = 'PRICE_DROP';
+            changeDetails = `PRICE DROPPED: Reduced by ${symbol}${(oldPrice - newPrice).toLocaleString('en-IN')} (${symbol}${oldPrice.toLocaleString('en-IN')} ➔ ${symbol}${newPrice.toLocaleString('en-IN')}).`;
+          } else {
+            logType = 'PRICE_RISE';
+            changeDetails = `PRICE INCREASED: Rose by ${symbol}${(newPrice - oldPrice).toLocaleString('en-IN')} (${symbol}${oldPrice.toLocaleString('en-IN')} ➔ ${symbol}${newPrice.toLocaleString('en-IN')}).`;
+          }
+          updatedCount++;
+        } else {
+          status = 'unchanged';
+          logType = 'UNCHANGED';
+          changeDetails = `UNCHANGED: Price verified at ${symbol}${newPrice.toLocaleString('en-IN')}.`;
+          unchangedCount++;
+        }
+
+        // Apply price engine updates to database (updates currentPrice, isAvailable, PriceHistory, alerts)
+        await priceEngine.process(item, scrapedData);
+
+        logs.push({
+          itemId: item._id,
+          productName: item.productName || scrapedData.productName || 'Tracked Product',
+          productUrl: item.url,
+          site: item.site || scrapedData.site || 'generic',
+          oldPrice,
+          newPrice,
+          targetPrice: item.targetPrice,
+          oldAvailable,
+          newAvailable: isNowAvailable,
+          status,
+          logType,
+          changeDetails,
+          timestamp: new Date()
+        });
+
+      } catch (err) {
+        failedCount++;
+        console.error(`[Sync Engine] Error scraping item ${item._id} (${item.productName}):`, err.message);
+        logs.push({
+          itemId: item._id,
+          productName: item.productName || 'Tracked Product',
+          productUrl: item.url,
+          site: item.site || 'generic',
+          oldPrice,
+          newPrice: oldPrice,
+          targetPrice: item.targetPrice,
+          oldAvailable,
+          newAvailable: false,
+          status: 'error',
+          logType: 'ERROR',
+          changeDetails: `SCRAPE FAILED: ${err.message || 'Page load error / anti-bot block.'}`,
+          timestamp: new Date()
+        });
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+    const completedAt = new Date();
+
+    const syncReport = new SyncReport({
+      triggeredBy,
+      status: 'completed',
+      startedAt,
+      completedAt,
+      durationMs,
+      summary: {
+        totalProducts: items.length,
+        updatedCount,
+        unchangedCount,
+        unavailableCount,
+        failedCount
+      },
+      logs
+    });
+
+    await syncReport.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Live sync completed in ${(durationMs / 1000).toFixed(1)}s. ${updatedCount} products updated, ${unchangedCount} unchanged, ${unavailableCount} unavailable, ${failedCount} errors.`,
+      report: syncReport
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/admin/sync-reports
+// List all sync execution reports sorted by date
+router.get('/sync-reports', async (req, res, next) => {
+  try {
+    const reports = await SyncReport.find({}, { logs: 0 }).sort({ startedAt: -1 }).limit(50);
+    res.status(200).json(reports);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/admin/sync-reports/:id
+// Get full details and logs of a specific sync report
+router.get('/sync-reports/:id', async (req, res, next) => {
+  try {
+    const report = await SyncReport.findById(req.params.id);
+    if (!report) {
+      return res.status(404).json({ error: 'Sync report not found' });
+    }
+    res.status(200).json(report);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// DELETE /api/admin/sync-reports/:id
+// Delete a specific sync report
+router.delete('/sync-reports/:id', async (req, res, next) => {
+  try {
+    const report = await SyncReport.findByIdAndDelete(req.params.id);
+    if (!report) {
+      return res.status(404).json({ error: 'Sync report not found' });
+    }
+    res.status(200).json({ success: true, message: 'Sync report deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;
