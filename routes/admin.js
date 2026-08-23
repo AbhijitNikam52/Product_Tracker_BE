@@ -15,6 +15,7 @@ const Notification = require('../models/Notification');
 const SearchLog = require('../models/SearchLog');
 const ComparisonProduct = require('../models/ComparisonProduct');
 const Coupon = require('../models/Coupon');
+const SavedProduct = require('../models/SavedProduct');
 
 // Services
 const scheduler = require('../services/scheduler');
@@ -36,6 +37,8 @@ router.get('/dashboard', async (req, res, next) => {
     const totalPriceHistories = await PriceHistory.countDocuments();
     const totalNotifications = await Notification.countDocuments();
     const totalComparisons = await ComparisonProduct.countDocuments();
+    const totalCoupons = await Coupon.countDocuments();
+    const totalSavedProducts = await SavedProduct.countDocuments();
 
     // Retailer breakdown
     const siteBreakdown = await TrackedItem.aggregate([
@@ -109,7 +112,9 @@ router.get('/dashboard', async (req, res, next) => {
         alertsTriggered,
         totalPriceHistories,
         totalNotifications,
-        totalComparisons
+        totalComparisons,
+        totalCoupons,
+        totalSavedProducts
       },
       siteStats,
       categoryStats,
