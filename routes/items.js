@@ -53,21 +53,33 @@ router.get('/', async (req, res, next) => {
 // Handles both scraping preview (when targetPrice === 0) and creating/tracking new products
 router.post('/', async (req, res, next) => {
   try {
-    const { url, targetPrice } = req.body;
+    const { url, targetPrice, productName, imageUrl, currentPrice, site, currency, coupons } = req.body;
 
     if (!url || !url.startsWith('http')) {
       return res.status(400).json({ error: 'Please provide a valid product URL starting with http/https' });
     }
 
-    console.log(`[POST /api/items] Scraping request for url: ${url}, targetPrice: ${targetPrice}`);
+    console.log(`[POST /api/items] Request for url: ${url}, targetPrice: ${targetPrice}`);
 
-    // Call scraper immediately
+    // Use client-provided pre-scraped details if present, otherwise fall back to scraper
     let scraped;
-    try {
-      scraped = await scraper.scrape(url);
-    } catch (scrapeErr) {
-      console.error('[POST /api/items] Scrape error:', scrapeErr.message);
-      return res.status(422).json({ error: 'Could not fetch price. Try a different link or verify the website is accessible.' });
+    if (productName && currentPrice !== undefined) {
+      console.log(`[POST /api/items] Using client-provided metadata for: "${productName}"`);
+      scraped = {
+        productName,
+        imageUrl: imageUrl || '',
+        price: currentPrice,
+        site: site || 'generic',
+        currency: currency || 'INR',
+        coupons: coupons || []
+      };
+    } else {
+      try {
+        scraped = await scraper.scrape(url);
+      } catch (scrapeErr) {
+        console.error('[POST /api/items] Scrape error:', scrapeErr.message);
+        return res.status(422).json({ error: 'Could not fetch price. Try a different link or verify the website is accessible.' });
+      }
     }
 
     // 1. Preview Mode: if targetPrice is 0 (or not specified), just return scraped data
