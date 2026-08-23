@@ -34,41 +34,22 @@ const processPriceUpdate = async (item, scrapedData) => {
     await couponService.updateScrapedCoupons(item.url, item._id, item.site, scrapedData.coupons);
   }
 
-  // 3. Keep exactly 2 records in PriceHistory (previous price & latest price) only when price changes
+  // 3. Keep price history when price changes, update latest timestamp if identical
   if (price !== null) {
     const history = await PriceHistory.find({ itemId: item._id }).sort({ recordedAt: 1 });
     
     if (history.length === 0) {
-      // No history exists, create the first record (latest)
+      // No history exists, create the first record
       const priceHistoryEntry = new PriceHistory({
         itemId: item._id,
         price: price,
         recordedAt: now
       });
       await priceHistoryEntry.save();
-    } else if (history.length === 1) {
-      // Only 1 record exists. If new price is different, save it as the second record.
-      if (history[0].price !== price) {
-        const priceHistoryEntry = new PriceHistory({
-          itemId: item._id,
-          price: price,
-          recordedAt: now
-        });
-        await priceHistoryEntry.save();
-      } else {
-        // Price is identical, just update the timestamp of the latest record
-        history[0].recordedAt = now;
-        await history[0].save();
-      }
     } else {
-      // 2 or more records exist.
       const latest = history[history.length - 1];
       if (latest.price !== price) {
-        // Price changed! Delete older records so the previous latest becomes the oldest (previous price),
-        // and add the new price as the new latest.
-        const idsToDelete = history.slice(0, history.length - 1).map(h => h._id);
-        await PriceHistory.deleteMany({ _id: { $in: idsToDelete } });
-
+        // Price changed! Create a new record
         const priceHistoryEntry = new PriceHistory({
           itemId: item._id,
           price: price,
@@ -76,11 +57,19 @@ const processPriceUpdate = async (item, scrapedData) => {
         });
         await priceHistoryEntry.save();
       } else {
-        // Price is identical, just update the timestamp of the latest record
+        // Price is identical, update the timestamp of the latest record
         latest.recordedAt = now;
         await latest.save();
       }
     }
+
+    // Prune history older than 90 days to prevent bloat
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    await PriceHistory.deleteMany({
+      itemId: item._id,
+      recordedAt: { $lt: ninetyDaysAgo }
+    });
   }
 
   const symbol = currency === 'USD' ? '$' : '₹';
