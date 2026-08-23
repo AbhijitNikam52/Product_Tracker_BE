@@ -220,30 +220,11 @@ const scrapeProductPage = async (page, platform, productUrl, platformKey) => {
       }
     }
 
-    // Scrape coupons & bank offers
-    let coupons = [];
-    try {
-      if (platformKey === 'amazon') {
-        coupons = await scraper.scrapeAmazonCoupons(page);
-      } else if (platformKey === 'flipkart') {
-        coupons = await scraper.scrapeFlipkartCoupons(page);
-      } else if (platformKey === 'myntra') {
-        coupons = await scraper.scrapeMyntraCoupons(page);
-      } else if (platformKey === 'ajio') {
-        coupons = await scraper.scrapeAjioCoupons(page);
-      } else {
-        coupons = await scraper.scrapeGenericCoupons(page);
-      }
-    } catch (couponErr) {
-      console.error('[Search Scraper] Error scraping coupons:', couponErr.message);
-    }
-
     return {
       title: title || 'Product details found',
       price,
       imageUrl: imageUrl || '',
-      rating: rating || '',
-      coupons
+      rating: rating || ''
     };
   } catch (err) {
     console.error(`[Scraper] Failed to scrape product page: ${productUrl}`, err.message);

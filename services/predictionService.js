@@ -220,7 +220,7 @@ const getPredictions = (item, actualHistory) => {
       confidence = 90;
     } else {
       decision = 'WAIT';
-      message = `WAIT: Although ${activeFestival.name} is live, the current price is still elevated. We recommend waiting for a flash deal or coupon.`;
+      message = `WAIT: Although ${activeFestival.name} is live, the current price is still elevated. We recommend waiting for a flash deal or price drop.`;
       confidence = 72;
     }
   } else if (activeFestival && daysToFestival <= 30) {
