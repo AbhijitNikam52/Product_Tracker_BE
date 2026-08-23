@@ -14,7 +14,6 @@ const comparisonRoutes = require('./routes/comparison');
 const searchRoutes = require('./routes/search');
 const adminRoutes = require('./routes/admin');
 const savedProductsRoutes = require('./routes/savedProducts');
-const couponsRoutes = require('./routes/coupons');
 
 // Scheduler Import
 const scheduler = require('./services/scheduler');
@@ -47,7 +46,6 @@ app.use('/api/comparison', comparisonRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/saved-products', savedProductsRoutes);
-app.use('/api/coupons', couponsRoutes);
 
 // Base route for health check
 app.get('/health', (req, res) => {
